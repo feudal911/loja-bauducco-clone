@@ -16,7 +16,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="SKYPE_TOOLBAR" content="SKYPE_TOOLBAR_PARSER_COMPATIBLE" />
-    <title data-i18n="title"></title>
+    <title>Carrinho | Loja Bauducco</title>
+    
+    <!-- Script para interceptar e silenciar chamadas de API externas -->
+    <script>
+      (function() {
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+          const url = args[0];
+          if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('/_v/mimo/'))) {
+            return Promise.reject(new Error('API não disponível localmente'));
+          }
+          if (typeof url === 'string' && (url.includes('send4-stamp') || url.includes('goadopt.io') || url.includes('onsite.crmback.io') || url.includes('disclaimer-api.goadopt.io'))) {
+            return Promise.reject(new Error('API externa bloqueada'));
+          }
+          return originalFetch.apply(this, args).catch(err => {
+            console.log('Requisição bloqueada ou falhou:', url);
+            return Promise.reject(err);
+          });
+        };
+        const originalXHROpen = XMLHttpRequest.prototype.open;
+        const originalXHRSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+          this._url = url;
+          if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('send4-stamp') || url.includes('goadopt.io') || url.includes('onsite.crmback.io') || url.includes('disclaimer-api.goadopt.io') || url.includes('/_v/mimo/'))) {
+            this._blocked = true;
+            return;
+          }
+          return originalXHROpen.apply(this, [method, url, ...rest]);
+        };
+        XMLHttpRequest.prototype.send = function(...args) {
+          if (this._blocked) {
+            console.log('XMLHttpRequest bloqueado:', this._url);
+            setTimeout(() => {
+              if (this.onerror) {
+                this.onerror(new Error('Request blocked'));
+              }
+            }, 0);
+            return;
+          }
+          return originalXHRSend.apply(this, args);
+        };
+      })();
+    </script>
+    
     <link rel="shortcut icon" href="../arquivos/lojabauducco-favicon.ico">
     <link rel="apple-touch-icon" href="../arquivos/lojabauducco-apple-touch-icon.png">
     <meta name="msapplication-TileImage" content="../arquivos/lojabauducco-windows-tile.png" />
