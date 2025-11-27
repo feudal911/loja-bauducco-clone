@@ -21,9 +21,35 @@
     <!-- Script para interceptar e silenciar chamadas de API externas -->
     <script>
       (function() {
+        // Mock de dados do carrinho vazio para evitar loading infinito
+        const mockOrderForm = {
+          orderFormId: 'mock-order-form',
+          items: [],
+          totalizers: [
+            { id: 'Items', name: 'Total dos itens', value: 0 },
+            { id: 'Shipping', name: 'Frete', value: 0 },
+            { id: 'Discounts', name: 'Descontos', value: 0 }
+          ],
+          value: 0,
+          shippingData: null,
+          paymentData: null,
+          clientProfileData: null
+        };
+        
         const originalFetch = window.fetch;
         window.fetch = function(...args) {
           const url = args[0];
+          const method = args[1]?.method || 'GET';
+          
+          // Retorna mock para APIs do checkout da VTEX
+          if (typeof url === 'string' && url.includes('/api/checkout/pub/orderForm')) {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve(mockOrderForm),
+              text: () => Promise.resolve(JSON.stringify(mockOrderForm))
+            });
+          }
+          
           if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('/_v/mimo/'))) {
             return Promise.reject(new Error('API não disponível localmente'));
           }
@@ -35,17 +61,46 @@
             return Promise.reject(err);
           });
         };
+        
         const originalXHROpen = XMLHttpRequest.prototype.open;
         const originalXHRSend = XMLHttpRequest.prototype.send;
+        
         XMLHttpRequest.prototype.open = function(method, url, ...rest) {
           this._url = url;
+          this._method = method;
+          
+          // Retorna mock para APIs do checkout
+          if (typeof url === 'string' && url.includes('/api/checkout/pub/orderForm')) {
+            this._mock = true;
+            this._mockData = mockOrderForm;
+            return;
+          }
+          
           if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('send4-stamp') || url.includes('goadopt.io') || url.includes('onsite.crmback.io') || url.includes('disclaimer-api.goadopt.io') || url.includes('/_v/mimo/'))) {
             this._blocked = true;
             return;
           }
           return originalXHROpen.apply(this, [method, url, ...rest]);
         };
+        
         XMLHttpRequest.prototype.send = function(...args) {
+          if (this._mock) {
+            // Simula resposta mock
+            setTimeout(() => {
+              this.readyState = 4;
+              this.status = 200;
+              this.responseText = JSON.stringify(this._mockData);
+              this.response = this._mockData;
+              if (this.onload) {
+                this.onload();
+              }
+              if (this.onreadystatechange) {
+                this.onreadystatechange();
+              }
+            }, 100);
+            return;
+          }
+          
           if (this._blocked) {
             console.log('XMLHttpRequest bloqueado:', this._url);
             setTimeout(() => {
@@ -57,6 +112,37 @@
           }
           return originalXHRSend.apply(this, args);
         };
+        
+        // Força parar o loading após 2 segundos
+        setTimeout(function() {
+          document.body.classList.remove('loading');
+          var loadingEl = document.querySelector('.loading.loading-bg');
+          if (loadingEl) {
+            loadingEl.style.display = 'none';
+          }
+          
+          // Mostra mensagem offline se o checkout não carregou
+          setTimeout(function() {
+            var cartContent = document.querySelector('.cart-template-holder');
+            var orderFormContent = document.querySelector('.orderform-template-holder');
+            if ((!cartContent || cartContent.innerHTML.trim() === '') && 
+                (!orderFormContent || orderFormContent.innerHTML.trim() === '')) {
+              var offlineMsg = document.getElementById('checkout-offline-message');
+              if (offlineMsg) {
+                offlineMsg.style.display = 'block';
+              }
+            }
+          }, 3000);
+          
+          // Tenta inicializar o checkout com dados mock
+          if (window.checkout && typeof window.checkout.setOrderForm === 'function') {
+            try {
+              window.checkout.setOrderForm(mockOrderForm);
+            } catch(e) {
+              console.log('Erro ao inicializar checkout:', e);
+            }
+          }
+        }, 2000);
       })();
     </script>
     
@@ -158,7 +244,7 @@
 <script type="text/javascript"  src="https://io2.vtex.com/portal-ui/v1.21.0/scripts/vtex-events-all.min.js"></script>
 </head>
 
-<body class="lojabauducco-vtexcommercestable-com-br loading" id="checkoutMainContainer">
+<body class="lojabauducco-vtexcommercestable-com-br" id="checkoutMainContainer">
 <!-- Google Tag Manager noscript removido para evitar erros de API externa
 <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PK8PGMT"
   height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
