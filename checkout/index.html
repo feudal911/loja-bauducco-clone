@@ -36,29 +36,55 @@
           clientProfileData: null
         };
         
+        // Função para criar resposta mock silenciosa
+        const createMockResponse = (data) => ({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: () => Promise.resolve(data),
+          text: () => Promise.resolve(JSON.stringify(data)),
+          blob: () => Promise.resolve(new Blob()),
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+          headers: new Headers(),
+          clone: function() { return this; }
+        });
+        
         const originalFetch = window.fetch;
         window.fetch = function(...args) {
           const url = args[0];
           const method = args[1]?.method || 'GET';
           
-          // Retorna mock para APIs do checkout da VTEX
-          if (typeof url === 'string' && url.includes('/api/checkout/pub/orderForm')) {
-            return Promise.resolve({
-              ok: true,
-              json: () => Promise.resolve(mockOrderForm),
-              text: () => Promise.resolve(JSON.stringify(mockOrderForm))
-            });
+          // Bloqueia e silencia chamadas para APIs problemáticas
+          if (typeof url === 'string') {
+            // Telemetria e métricas da VTEX
+            if (url.includes('telemetry.vtex.com') || 
+                url.includes('metrics') || 
+                url.includes('/api/checkout/pub/orderForm') ||
+                url.includes('/api/checkout/')) {
+              // Retorna resposta mock silenciosa sem erro
+              return Promise.resolve(createMockResponse(mockOrderForm));
+            }
+            
+            // APIs locais não disponíveis
+            if (url.startsWith('/api/') || 
+                url.startsWith('file://') || 
+                url.includes('/_v/mimo/')) {
+              return Promise.resolve(createMockResponse({}));
+            }
+            
+            // Outras APIs externas problemáticas
+            if (url.includes('send4-stamp') || 
+                url.includes('goadopt.io') || 
+                url.includes('onsite.crmback.io') ||
+                url.includes('disclaimer-api.goadopt.io')) {
+              return Promise.resolve(createMockResponse({}));
+            }
           }
           
-          if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('/_v/mimo/'))) {
-            return Promise.reject(new Error('API não disponível localmente'));
-          }
-          if (typeof url === 'string' && (url.includes('send4-stamp') || url.includes('goadopt.io') || url.includes('onsite.crmback.io') || url.includes('disclaimer-api.goadopt.io'))) {
-            return Promise.reject(new Error('API externa bloqueada'));
-          }
+          // Para outras requisições, tenta fazer normalmente mas silencia erros
           return originalFetch.apply(this, args).catch(err => {
-            console.log('Requisição bloqueada ou falhou:', url);
-            return Promise.reject(err);
+            // Silencia erros - não loga no console
+            return Promise.resolve(createMockResponse({}));
           });
         };
         
@@ -69,47 +95,87 @@
           this._url = url;
           this._method = method;
           
-          // Retorna mock para APIs do checkout
-          if (typeof url === 'string' && url.includes('/api/checkout/pub/orderForm')) {
-            this._mock = true;
-            this._mockData = mockOrderForm;
-            return;
+          // Bloqueia e silencia chamadas problemáticas
+          if (typeof url === 'string') {
+            if (url.includes('telemetry.vtex.com') || 
+                url.includes('metrics') ||
+                url.includes('/api/checkout/pub/orderForm') ||
+                url.includes('/api/checkout/') ||
+                url.startsWith('/api/') || 
+                url.startsWith('file://') || 
+                url.includes('send4-stamp') || 
+                url.includes('goadopt.io') || 
+                url.includes('onsite.crmback.io') || 
+                url.includes('disclaimer-api.goadopt.io') || 
+                url.includes('/_v/mimo/')) {
+              this._blocked = true;
+              this._mock = true;
+              this._mockData = url.includes('orderForm') ? mockOrderForm : {};
+              return;
+            }
           }
           
-          if (typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('file://') || url.includes('send4-stamp') || url.includes('goadopt.io') || url.includes('onsite.crmback.io') || url.includes('disclaimer-api.goadopt.io') || url.includes('/_v/mimo/'))) {
-            this._blocked = true;
-            return;
-          }
           return originalXHROpen.apply(this, [method, url, ...rest]);
         };
         
         XMLHttpRequest.prototype.send = function(...args) {
-          if (this._mock) {
-            // Simula resposta mock
+          if (this._blocked && this._mock) {
+            // Simula resposta mock silenciosa sem erro
             setTimeout(() => {
               this.readyState = 4;
               this.status = 200;
+              this.statusText = 'OK';
               this.responseText = JSON.stringify(this._mockData);
               this.response = this._mockData;
               if (this.onload) {
-                this.onload();
+                try {
+                  this.onload();
+                } catch(e) {
+                  // Silencia erros
+                }
               }
               if (this.onreadystatechange) {
-                this.onreadystatechange();
+                try {
+                  this.onreadystatechange();
+                } catch(e) {
+                  // Silencia erros
+                }
               }
-            }, 100);
+            }, 50);
             return;
           }
           
           if (this._blocked) {
-            console.log('XMLHttpRequest bloqueado:', this._url);
+            // Silencia requisições bloqueadas - não chama onerror
             setTimeout(() => {
-              if (this.onerror) {
-                this.onerror(new Error('Request blocked'));
+              this.readyState = 4;
+              this.status = 200;
+              this.responseText = '{}';
+              this.response = {};
+              if (this.onload) {
+                try {
+                  this.onload();
+                } catch(e) {
+                  // Silencia erros
+                }
               }
-            }, 0);
+            }, 50);
             return;
           }
+          
+          // Para requisições normais, intercepta erros
+          const originalOnError = this.onerror;
+          this.onerror = function(event) {
+            // Silencia erros - não propaga
+            try {
+              if (originalOnError) {
+                originalOnError.call(this, event);
+              }
+            } catch(e) {
+              // Silencia
+            }
+          };
+          
           return originalXHRSend.apply(this, args);
         };
         
