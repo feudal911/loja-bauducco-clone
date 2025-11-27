@@ -21,6 +21,9 @@
     <!-- Script para interceptar e silenciar chamadas de API externas -->
     <script>
       (function() {
+        // Executa ANTES de qualquer outro script
+        'use strict';
+        
         // Mock de dados do carrinho vazio para evitar loading infinito
         const mockOrderForm = {
           orderFormId: 'mock-order-form',
@@ -49,45 +52,48 @@
           clone: function() { return this; }
         });
         
+        // Função para verificar se URL deve ser bloqueada
+        const shouldBlock = (url) => {
+          if (typeof url !== 'string') return false;
+          const urlLower = url.toLowerCase();
+          return urlLower.includes('telemetry.vtex.com') ||
+                 urlLower.includes('telemetry') ||
+                 urlLower.includes('metrics') ||
+                 urlLower.includes('/api/checkout/pub/orderform') ||
+                 urlLower.includes('/api/checkout/') ||
+                 url.startsWith('/api/') ||
+                 url.startsWith('file://') ||
+                 urlLower.includes('/_v/mimo/') ||
+                 urlLower.includes('send4-stamp') ||
+                 urlLower.includes('goadopt.io') ||
+                 urlLower.includes('onsite.crmback.io') ||
+                 urlLower.includes('disclaimer-api.goadopt.io');
+        };
+        
+        // Intercepta fetch ANTES de qualquer uso
         const originalFetch = window.fetch;
         window.fetch = function(...args) {
           const url = args[0];
-          const method = args[1]?.method || 'GET';
           
-          // Bloqueia e silencia chamadas para APIs problemáticas
-          if (typeof url === 'string') {
-            // Telemetria e métricas da VTEX
-            if (url.includes('telemetry.vtex.com') || 
-                url.includes('metrics') || 
-                url.includes('/api/checkout/pub/orderForm') ||
-                url.includes('/api/checkout/')) {
-              // Retorna resposta mock silenciosa sem erro
-              return Promise.resolve(createMockResponse(mockOrderForm));
-            }
-            
-            // APIs locais não disponíveis
-            if (url.startsWith('/api/') || 
-                url.startsWith('file://') || 
-                url.includes('/_v/mimo/')) {
-              return Promise.resolve(createMockResponse({}));
-            }
-            
-            // Outras APIs externas problemáticas
-            if (url.includes('send4-stamp') || 
-                url.includes('goadopt.io') || 
-                url.includes('onsite.crmback.io') ||
-                url.includes('disclaimer-api.goadopt.io')) {
-              return Promise.resolve(createMockResponse({}));
-            }
+          // Bloqueia todas as URLs problemáticas
+          if (shouldBlock(url)) {
+            const mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
+            return Promise.resolve(createMockResponse(mockData));
           }
           
           // Para outras requisições, tenta fazer normalmente mas silencia erros
-          return originalFetch.apply(this, args).catch(err => {
-            // Silencia erros - não loga no console
+          try {
+            return originalFetch.apply(this, args).catch(err => {
+              // Silencia erros completamente
+              return Promise.resolve(createMockResponse({}));
+            });
+          } catch(e) {
+            // Silencia qualquer exceção
             return Promise.resolve(createMockResponse({}));
-          });
+          }
         };
         
+        // Intercepta XMLHttpRequest ANTES de qualquer uso
         const originalXHROpen = XMLHttpRequest.prototype.open;
         const originalXHRSend = XMLHttpRequest.prototype.send;
         
@@ -95,78 +101,82 @@
           this._url = url;
           this._method = method;
           
-          // Bloqueia e silencia chamadas problemáticas
-          if (typeof url === 'string') {
-            if (url.includes('telemetry.vtex.com') || 
-                url.includes('metrics') ||
-                url.includes('/api/checkout/pub/orderForm') ||
-                url.includes('/api/checkout/') ||
-                url.startsWith('/api/') || 
-                url.startsWith('file://') || 
-                url.includes('send4-stamp') || 
-                url.includes('goadopt.io') || 
-                url.includes('onsite.crmback.io') || 
-                url.includes('disclaimer-api.goadopt.io') || 
-                url.includes('/_v/mimo/')) {
-              this._blocked = true;
-              this._mock = true;
-              this._mockData = url.includes('orderForm') ? mockOrderForm : {};
-              return;
-            }
+          // Bloqueia todas as URLs problemáticas
+          if (shouldBlock(url)) {
+            this._blocked = true;
+            this._mock = true;
+            this._mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
+            // Não chama originalXHROpen para bloquear completamente
+            return;
           }
           
           return originalXHROpen.apply(this, [method, url, ...rest]);
         };
         
         XMLHttpRequest.prototype.send = function(...args) {
+          // Se foi bloqueado, retorna resposta mock silenciosa
           if (this._blocked && this._mock) {
-            // Simula resposta mock silenciosa sem erro
+            // Simula resposta mock silenciosa SEM erro
+            const self = this;
             setTimeout(() => {
-              this.readyState = 4;
-              this.status = 200;
-              this.statusText = 'OK';
-              this.responseText = JSON.stringify(this._mockData);
-              this.response = this._mockData;
-              if (this.onload) {
-                try {
-                  this.onload();
-                } catch(e) {
-                  // Silencia erros
+              try {
+                self.readyState = 4;
+                self.status = 200;
+                self.statusText = 'OK';
+                self.responseText = JSON.stringify(self._mockData);
+                self.response = self._mockData;
+                
+                // Chama callbacks de sucesso, não de erro
+                if (self.onload) {
+                  try {
+                    self.onload.call(self);
+                  } catch(e) {
+                    // Silencia erros
+                  }
                 }
-              }
-              if (this.onreadystatechange) {
-                try {
-                  this.onreadystatechange();
-                } catch(e) {
-                  // Silencia erros
+                if (self.onreadystatechange) {
+                  try {
+                    self.onreadystatechange.call(self);
+                  } catch(e) {
+                    // Silencia erros
+                  }
                 }
+              } catch(e) {
+                // Silencia qualquer erro
               }
-            }, 50);
+            }, 10);
             return;
           }
           
           if (this._blocked) {
-            // Silencia requisições bloqueadas - não chama onerror
+            // Silencia requisições bloqueadas - retorna sucesso vazio
+            const self = this;
             setTimeout(() => {
-              this.readyState = 4;
-              this.status = 200;
-              this.responseText = '{}';
-              this.response = {};
-              if (this.onload) {
-                try {
-                  this.onload();
-                } catch(e) {
-                  // Silencia erros
+              try {
+                self.readyState = 4;
+                self.status = 200;
+                self.responseText = '{}';
+                self.response = {};
+                if (self.onload) {
+                  try {
+                    self.onload.call(self);
+                  } catch(e) {
+                    // Silencia
+                  }
                 }
+              } catch(e) {
+                // Silencia
               }
-            }, 50);
+            }, 10);
             return;
           }
           
-          // Para requisições normais, intercepta erros
+          // Para requisições normais, intercepta erros silenciosamente
           const originalOnError = this.onerror;
+          const originalOnAbort = this.onabort;
+          
           this.onerror = function(event) {
-            // Silencia erros - não propaga
+            // Silencia completamente - não propaga erro
             try {
               if (originalOnError) {
                 originalOnError.call(this, event);
@@ -176,7 +186,23 @@
             }
           };
           
-          return originalXHRSend.apply(this, args);
+          this.onabort = function(event) {
+            // Silencia completamente
+            try {
+              if (originalOnAbort) {
+                originalOnAbort.call(this, event);
+              }
+            } catch(e) {
+              // Silencia
+            }
+          };
+          
+          try {
+            return originalXHRSend.apply(this, args);
+          } catch(e) {
+            // Silencia qualquer exceção
+            return;
+          }
         };
         
         // Força parar o loading após 2 segundos
