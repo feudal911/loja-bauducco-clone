@@ -1,0 +1,25 @@
+# Disallow all crawlers access to certain pages. 
+
+User-agent: *
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+
+Disallow: /account/* 
+Disallow: /login/* 
+Disallow: /checkout/* 
+Disallow: /busca/* 
+Disallow: /quick-view/* 
+Disallow: /espiar/* 
+Disallow: /sistema/buscavazia*
+Disallow: /Sistema/buscavazia*
+Disallow: /Sistema*
+Disallow: /sistema*
+Noindex: /buscapagina/* 
+
+Sitemap: https://www.lojabauducco.com.br/sitemap.xml
