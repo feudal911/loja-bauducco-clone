@@ -2,29 +2,13 @@
 <html lang="pt-BR">
 
 <head>
-<!-- Google Tag Manager removido para evitar erros de API externa
-<script type="text/javascript">(function (w, d, s, l, i) {
-    w[l] = w[l] || []; w[l].push({
-        'gtm.start':
-        new Date().getTime(), event: 'gtm.js'
-    }); var f = d.getElementsByTagName(s)[0],
-    j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
-    '//www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
-})(window, document, 'script', 'dataLayer', 'GTM-PK8PGMT');</script>
--->
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="SKYPE_TOOLBAR" content="SKYPE_TOOLBAR_PARSER_COMPATIBLE" />
-    <title>Carrinho | Loja Bauducco</title>
-    
-    <!-- Script para interceptar e silenciar chamadas de API externas -->
+    <!-- Script para interceptar e silenciar chamadas de API externas - DEVE SER O PRIMEIRO -->
     <script>
       (function() {
-        // Executa ANTES de qualquer outro script
+        // Executa IMEDIATAMENTE, antes de qualquer outro código
         'use strict';
         
-        // Mock de dados do carrinho vazio para evitar loading infinito
+        // Mock de dados do carrinho vazio
         const mockOrderForm = {
           orderFormId: 'mock-order-form',
           items: [],
@@ -70,174 +54,100 @@
                  urlLower.includes('disclaimer-api.goadopt.io');
         };
         
-        // Intercepta fetch ANTES de qualquer uso
-        const originalFetch = window.fetch;
-        window.fetch = function(...args) {
-          const url = args[0];
-          
-          // Bloqueia todas as URLs problemáticas
-          if (shouldBlock(url)) {
-            const mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
-            return Promise.resolve(createMockResponse(mockData));
-          }
-          
-          // Para outras requisições, tenta fazer normalmente mas silencia erros
-          try {
-            return originalFetch.apply(this, args).catch(err => {
-              // Silencia erros completamente
+        // Intercepta fetch IMEDIATAMENTE
+        if (window.fetch) {
+          const originalFetch = window.fetch;
+          window.fetch = function(...args) {
+            const url = args[0];
+            if (shouldBlock(url)) {
+              const mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
+              return Promise.resolve(createMockResponse(mockData));
+            }
+            try {
+              return originalFetch.apply(this, args).catch(() => Promise.resolve(createMockResponse({})));
+            } catch(e) {
               return Promise.resolve(createMockResponse({}));
-            });
-          } catch(e) {
-            // Silencia qualquer exceção
-            return Promise.resolve(createMockResponse({}));
-          }
-        };
-        
-        // Intercepta XMLHttpRequest ANTES de qualquer uso
-        const originalXHROpen = XMLHttpRequest.prototype.open;
-        const originalXHRSend = XMLHttpRequest.prototype.send;
-        
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-          this._url = url;
-          this._method = method;
-          
-          // Bloqueia todas as URLs problemáticas
-          if (shouldBlock(url)) {
-            this._blocked = true;
-            this._mock = true;
-            this._mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
-            // Não chama originalXHROpen para bloquear completamente
-            return;
-          }
-          
-          return originalXHROpen.apply(this, [method, url, ...rest]);
-        };
-        
-        XMLHttpRequest.prototype.send = function(...args) {
-          // Se foi bloqueado, retorna resposta mock silenciosa
-          if (this._blocked && this._mock) {
-            // Simula resposta mock silenciosa SEM erro
-            const self = this;
-            setTimeout(() => {
-              try {
-                self.readyState = 4;
-                self.status = 200;
-                self.statusText = 'OK';
-                self.responseText = JSON.stringify(self._mockData);
-                self.response = self._mockData;
-                
-                // Chama callbacks de sucesso, não de erro
-                if (self.onload) {
-                  try {
-                    self.onload.call(self);
-                  } catch(e) {
-                    // Silencia erros
-                  }
-                }
-                if (self.onreadystatechange) {
-                  try {
-                    self.onreadystatechange.call(self);
-                  } catch(e) {
-                    // Silencia erros
-                  }
-                }
-              } catch(e) {
-                // Silencia qualquer erro
-              }
-            }, 10);
-            return;
-          }
-          
-          if (this._blocked) {
-            // Silencia requisições bloqueadas - retorna sucesso vazio
-            const self = this;
-            setTimeout(() => {
-              try {
-                self.readyState = 4;
-                self.status = 200;
-                self.responseText = '{}';
-                self.response = {};
-                if (self.onload) {
-                  try {
-                    self.onload.call(self);
-                  } catch(e) {
-                    // Silencia
-                  }
-                }
-              } catch(e) {
-                // Silencia
-              }
-            }, 10);
-            return;
-          }
-          
-          // Para requisições normais, intercepta erros silenciosamente
-          const originalOnError = this.onerror;
-          const originalOnAbort = this.onabort;
-          
-          this.onerror = function(event) {
-            // Silencia completamente - não propaga erro
-            try {
-              if (originalOnError) {
-                originalOnError.call(this, event);
-              }
-            } catch(e) {
-              // Silencia
             }
           };
+        }
+        
+        // Intercepta XMLHttpRequest IMEDIATAMENTE
+        if (window.XMLHttpRequest) {
+          const originalXHROpen = XMLHttpRequest.prototype.open;
+          const originalXHRSend = XMLHttpRequest.prototype.send;
           
-          this.onabort = function(event) {
-            // Silencia completamente
-            try {
-              if (originalOnAbort) {
-                originalOnAbort.call(this, event);
-              }
-            } catch(e) {
-              // Silencia
+          XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+            this._url = url;
+            this._method = method;
+            if (shouldBlock(url)) {
+              this._blocked = true;
+              this._mock = true;
+              this._mockData = url.toLowerCase().includes('orderform') ? mockOrderForm : {};
+              return;
             }
+            return originalXHROpen.apply(this, [method, url, ...rest]);
           };
           
-          try {
-            return originalXHRSend.apply(this, args);
-          } catch(e) {
-            // Silencia qualquer exceção
-            return;
-          }
-        };
-        
-        // Força parar o loading após 2 segundos
-        setTimeout(function() {
-          document.body.classList.remove('loading');
-          var loadingEl = document.querySelector('.loading.loading-bg');
-          if (loadingEl) {
-            loadingEl.style.display = 'none';
-          }
-          
-          // Mostra mensagem offline se o checkout não carregou
-          setTimeout(function() {
-            var cartContent = document.querySelector('.cart-template-holder');
-            var orderFormContent = document.querySelector('.orderform-template-holder');
-            if ((!cartContent || cartContent.innerHTML.trim() === '') && 
-                (!orderFormContent || orderFormContent.innerHTML.trim() === '')) {
-              var offlineMsg = document.getElementById('checkout-offline-message');
-              if (offlineMsg) {
-                offlineMsg.style.display = 'block';
-              }
+          XMLHttpRequest.prototype.send = function(...args) {
+            if (this._blocked && this._mock) {
+              const self = this;
+              setTimeout(() => {
+                try {
+                  self.readyState = 4;
+                  self.status = 200;
+                  self.statusText = 'OK';
+                  self.responseText = JSON.stringify(self._mockData);
+                  self.response = self._mockData;
+                  if (self.onload) self.onload.call(self);
+                  if (self.onreadystatechange) self.onreadystatechange.call(self);
+                } catch(e) {}
+              }, 10);
+              return;
             }
-          }, 3000);
-          
-          // Tenta inicializar o checkout com dados mock
-          if (window.checkout && typeof window.checkout.setOrderForm === 'function') {
+            if (this._blocked) {
+              const self = this;
+              setTimeout(() => {
+                try {
+                  self.readyState = 4;
+                  self.status = 200;
+                  self.responseText = '{}';
+                  self.response = {};
+                  if (self.onload) self.onload.call(self);
+                } catch(e) {}
+              }, 10);
+              return;
+            }
+            const originalOnError = this.onerror;
+            this.onerror = function() {
+              try {
+                if (originalOnError) originalOnError.call(this);
+              } catch(e) {}
+            };
             try {
-              window.checkout.setOrderForm(mockOrderForm);
+              return originalXHRSend.apply(this, args);
             } catch(e) {
-              console.log('Erro ao inicializar checkout:', e);
+              return;
             }
-          }
-        }, 2000);
+          };
+        }
       })();
     </script>
     
+<!-- Google Tag Manager removido para evitar erros de API externa
+<script type="text/javascript">(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+        'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+    j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+    '//www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+})(window, document, 'script', 'dataLayer', 'GTM-PK8PGMT');</script>
+-->
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="SKYPE_TOOLBAR" content="SKYPE_TOOLBAR_PARSER_COMPATIBLE" />
+    <title>Carrinho | Loja Bauducco</title>
     <link rel="shortcut icon" href="../arquivos/lojabauducco-favicon.ico">
     <link rel="apple-touch-icon" href="../arquivos/lojabauducco-apple-touch-icon.png">
     <meta name="msapplication-TileImage" content="../arquivos/lojabauducco-windows-tile.png" />
