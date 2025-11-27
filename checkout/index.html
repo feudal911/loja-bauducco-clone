@@ -308,12 +308,19 @@
             <a href="javascript:void(0);" data-bind="click: removeGiftRegistry" data-i18n="giftListDismiss"></a>.
         </small>
 
-        <div class="loading loading-bg" data-bind="visible: loading">
+        <div class="loading loading-bg" data-bind="visible: loading" style="display: none !important;">
             <div class="loading-img">
                 <i class="icon-spinner icon-spin icon-3x">
                     <span data-i18n="global.loading"></span>
                 </i>
             </div>
+        </div>
+        
+        <!-- Mensagem quando checkout não pode carregar -->
+        <div id="checkout-offline-message" style="display: none; padding: 20px; text-align: center; background: #f5f5f5; margin: 20px; border-radius: 5px;">
+            <h3>Carrinho de Compras</h3>
+            <p>O checkout está em modo offline. Para uma experiência completa, acesse o site oficial.</p>
+            <p><a href="../index.html" class="btn btn-primary">Voltar para a Loja</a></p>
         </div>
 
         <div class="checkout-container row-fluid">
